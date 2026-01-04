@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Birthday Crossword</title>
+  <style>
+    :root { --cell: 38px; --gap: 2px; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0; background: #0b0b0f; color: #f5f5f5;
+      display: grid; min-height: 100vh; place-items: center;
+    }
+    .wrap { width: min(980px, 94vw); padding: 22px; display: grid; gap: 18px; }
+    h1 { margin: 0; font-weight: 700; letter-spacing: .5px; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap; }
+    .btn {
+      border: 1px solid #2a2a35; background: #14141b; color: #fff;
+      padding: 10px 14px; border-radius: 12px; cursor: pointer;
+      font-weight: 600;
+    }
+    .btn:active { transform: translateY(1px); }
+    .layout { display: grid; gap: 18px; grid-template-columns: 1fr 340px; }
+    @media (max-width: 880px){ .layout { grid-template-columns: 1fr; } }
+
+    .board {
+      background: #111118; border: 1px solid #232332; border-radius: 16px;
+      padding: 16px; overflow: auto;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(var(--cols), var(--cell));
+      grid-template-rows: repeat(var(--rows), var(--cell));
+      gap: var(--gap);
+      width: max-content;
+      padding: 10px;
+      border-radius: 14px;
+      background: #0e0e15;
+    }
+    .cell {
+      width: var(--cell); height: var(--cell);
+      display:flex; align-items:center; justify-content:center;
+      border-radius: 8px;
+      background: #0b0b0f;
+      border: 1px solid #1e1e2a;
+      position: relative;
+    }
+    .cell.block {
+      background: #050509;
+      border: 1px solid #0f0f16;
+    }
+    input.letter {
+      width: 100%; height: 100%;
+      border: none; outline: none;
+      background: transparent; color: #fff;
+      font-size: 18px; text-transform: uppercase;
+      text-align: center; font-weight: 700;
+    }
+    .num {
+      position:absolute; top: 4px; left: 6px;
+      font-size: 10px; opacity: .65;
+    }
+    .highlight {
+      border-color: #ffd36a !important;
+      box-shadow: 0 0 0 2px rgba(255,211,106,.18);
+    }
+
+    .side {
+      background: #111118; border: 1px solid #232332; border-radius: 16px;
+      padding: 16px;
+    }
+    .clues h3 { margin: 0 0 8px 0; }
+    .clues ol { margin: 0; padding-left: 18px; line-height: 1.45; opacity: .95; }
+    .note { margin-top: 10px; font-size: 13px; opacity: .7; }
+
+    .overlay {
+      position: fixed; inset: 0; display: none; place-items: center;
+      background: rgba(0,0,0,.68);
+    }
+    .card {
+      width: min(680px, 92vw);
+      background: #0f0f16; border: 1px solid #2b2b3a;
+      border-radius: 22px; padding: 22px; text-align: center;
+      box-shadow: 0 16px 60px rgba(0,0,0,.5);
+    }
+    .big {
+      font-size: clamp(28px, 4.5vw, 52px);
+      margin: 10px 0 0;
+      letter-spacing: 1px;
+    }
+    .sub {
+      margin: 10px 0 0;
+      font-size: 18px; opacity: .9;
+    }
+    .pop {
+      display: inline-block;
+      margin-top: 14px;
+      font-size: 26px;
+      padding: 8px 14px;
+      border-radius: 14px;
+      border: 1px solid #2b2b3a;
+      background: #141421;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <h1>Birthday Crossword 🖤</h1>
+        <div style="opacity:.75; margin-top:4px;">Solve all clues to reveal a message.</div>
+      </div>
+      <button id="startBtn" class="btn">Start (enable music)</button>
+    </div>
+
+    <div class="layout">
+      <div class="board">
+        <div id="grid" class="grid" aria-label="crossword grid"></div>
+      </div>
+
+      <div class="side">
+        <div class="clues">
+          <h3>Across</h3>
+          <ol id="across"></ol>
+          <h3 style="margin-top:14px;">Down</h3>
+          <ol id="down"></ol>
+        </div>
+        <div class="note">
+          Tip: Type letters. It checks automatically.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- reveal overlay -->
+  <div id="overlay" class="overlay">
+    <div class="card">
+      <div class="sub">You found it…</div>
+      <div class="big">HAPPY BIRTHDAY</div>
+      <div class="pop" id="toMy" style="display:none;">to my</div>
+      <div class="big">SHANU</div>
+      <div class="sub" style="margin-top:14px; opacity:.8;">(Confetti + music 🎶)</div>
+      <button id="closeBtn" class="btn" style="margin-top:18px;">Close</button>
+    </div>
+  </div>
+
+  <!-- Put a LEGAL audio file here, same folder as this HTML -->
+  <audio id="song" preload="auto">
+    <source src="sinatra.mp3" type="audio/mpeg">
+  </audio>
+
+  <!-- confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
+  <script>
+    /*********************************************************
+     * 1) EDIT YOUR CROSSWORD HERE
+     *********************************************************/
+    // Grid is 12 rows x 12 cols. "#" = block, "." = empty letter cell.
+    const GRID = [
+      "############",
+      "###.....####", // row 1: HAPPY across starts col 3 (0-indexed) length 5
+      "###..#..####",
+      "##........##", // row 3: BIRTHDAY across starts col 2 length 8
+      "###..#..####",
+      "###.....####", // row 5: SHANU across starts col 3 length 5
+      "###..#..####",
+      "##....#....#", // extra area for other words
+      "####..#..###",
+      "####.....###",
+      "############",
+      "############",
+    ];
+
+    // Words placed with start row/col and direction.
+    // Keep these three as your hidden-message line-up.
+    const WORDS = [
+      { id: 1, dir: "across", row: 1, col: 3, answer: "HAPPY", clue: "What I hope you feel today." , special: "HAPPY" },
+      { id: 2, dir: "across", row: 3, col: 2, answer: "BIRTHDAY", clue: "The reason for this game." , special: "BIRTHDAY" },
+      { id: 3, dir: "across", row: 5, col: 3, answer: "SHANU", clue: "Your nickname (from me)." , special: "SHANU" },
+
+      // Add/replace these with your real relationship clues:
+      { id: 4, dir: "across", row: 7, col: 2, answer: "HUGS", clue: "What you’re getting extra of today." },
+      { id: 5, dir: "across", row: 7, col: 7, answer: "DATE", clue: "We should go on one soon." },
+      { id: 6, dir: "down",   row: 7, col: 2, answer: "HOME", clue: "You feel like this to me." },
+      { id: 7, dir: "down",   row: 7, col: 3, answer: "OURS", clue: "Not yours, not mine — ____." },
+      { id: 8, dir: "down",   row: 9, col: 4, answer: "LOVE", clue: "The whole point." },
+    ];
+
+    /*********************************************************
+     * 2) RENDER GRID + INPUTS
+     *********************************************************/
+    const rows = GRID.length;
+    const cols = GRID[0].length;
+
+    const gridEl = document.getElementById("grid");
+    gridEl.style.setProperty("--rows", rows);
+    gridEl.style.setProperty("--cols", cols);
+
+    // Build a map of all solution letters by cell key "r,c"
+    const solution = new Map();
+    const wordCells = new Map(); // wordId -> array of keys
+    WORDS.forEach(w => {
+      const keys = [];
+      for (let i = 0; i < w.answer.length; i++) {
+        const r = w.row + (w.dir === "down" ? i : 0);
+        const c = w.col + (w.dir === "across" ? i : 0);
+        const key = `${r},${c}`;
+        solution.set(key, w.answer[i].toUpperCase());
+        keys.push(key);
+      }
+      wordCells.set(w.id, keys);
+    });
+
+    // Numbering: show the id at starting cell
+    const startNums = new Map();
+    WORDS.forEach(w => startNums.set(`${w.row},${w.col}`, w.id));
+
+    // Render cells
+    const inputs = new Map(); // key -> input
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const ch = GRID[r][c];
+        const cell = document.createElement("div");
+        cell.className = "cell" + (ch === "#" ? " block" : "");
+        const key = `${r},${c}`;
+
+        if (startNums.has(key) && ch !== "#") {
+          const num = document.createElement("div");
+          num.className = "num";
+          num.textContent = startNums.get(key);
+          cell.appendChild(num);
+        }
+
+        if (ch !== "#") {
+          const inp = document.createElement("input");
+          inp.className = "letter";
+          inp.maxLength = 1;
+          inp.autocomplete = "off";
+          inp.inputMode = "text";
+          inp.spellcheck = false;
+
+          inp.addEventListener("input", () => {
+            inp.value = (inp.value || "").toUpperCase().replace(/[^A-Z]/g, "");
+            checkProgress();
+          });
+
+          // optional: arrow-key navigation
+          inp.addEventListener("keydown", (e) => {
+            if (!["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Backspace"].includes(e.key)) return;
+            const move = (dr, dc) => {
+              const nk = `${r+dr},${c+dc}`;
+              const next = inputs.get(nk);
+              if (next) next.focus();
+            };
+            if (e.key === "ArrowUp") move(-1,0);
+            if (e.key === "ArrowDown") move(1,0);
+            if (e.key === "ArrowLeft") move(0,-1);
+            if (e.key === "ArrowRight") move(0,1);
+            if (e.key === "Backspace" && !inp.value) move(0,-1);
+          });
+
+          cell.appendChild(inp);
+          inputs.set(key, inp);
+        }
+
+        gridEl.appendChild(cell);
+      }
+    }
+
+    /*********************************************************
+     * 3) CLUES SIDEBAR
+     *********************************************************/
+    const acrossEl = document.getElementById("across");
+    const downEl = document.getElementById("down");
+
+    function addClue(listEl, w) {
+      const li = document.createElement("li");
+      li.textContent = `${w.id}. ${w.clue}`;
+      listEl.appendChild(li);
+    }
+
+    WORDS.filter(w => w.dir === "across").forEach(w => addClue(acrossEl, w));
+    WORDS.filter(w => w.dir === "down").forEach(w => addClue(downEl, w));
+
+    /*********************************************************
+     * 4) GAME LOGIC: CHECK SOLUTION + REVEAL SEQUENCE
+     *********************************************************/
+    const overlay = document.getElementById("overlay");
+    const toMy = document.getElementById("toMy");
+    const closeBtn = document.getElementById("closeBtn");
+    const song = document.getElementById("song");
+    const startBtn = document.getElementById("startBtn");
+
+    let audioUnlocked = false;
+    let finished = false;
+
+    startBtn.addEventListener("click", async () => {
+      audioUnlocked = true;
+      startBtn.textContent = "Music enabled ✅";
+      // Prime audio (some browsers need a play/pause after click)
+      try { await song.play(); song.pause(); song.currentTime = 0; } catch {}
+    });
+
+    closeBtn.addEventListener("click", () => {
+      overlay.style.display = "none";
+    });
+
+    function setHighlights(on) {
+      // highlight the three special words in the grid
+      const specials = WORDS.filter(w => w.special);
+      specials.forEach(w => {
+        const keys = wordCells.get(w.id) || [];
+        keys.forEach(k => {
+          const inp = inputs.get(k);
+          if (!inp) return;
+          const cell = inp.parentElement;
+          cell.classList.toggle("highlight", on);
+        });
+      });
+    }
+
+    function allCorrect() {
+      // Every solution cell must match
+      for (const [key, letter] of solution.entries()) {
+        const inp = inputs.get(key);
+        if (!inp) return false;
+        if ((inp.value || "").toUpperCase() !== letter) return false;
+      }
+      return true;
+    }
+
+    async function celebrate() {
+      finished = true;
+      setHighlights(true);
+
+      overlay.style.display = "grid";
+
+      // 1) Show “to my” after the alignment moment
+      setTimeout(() => {
+        toMy.style.display = "inline-block";
+      }, 700);
+
+      // 2) Confetti
+      setTimeout(() => {
+        confetti({ particleCount: 120, spread: 70, origin: { y: 0.65 } });
+        confetti({ particleCount: 90, spread: 90, origin: { y: 0.55 } });
+      }, 1200);
+
+      // 3) Play song (if unlocked)
+      setTimeout(async () => {
+        if (!audioUnlocked) return;
+        try { await song.play(); } catch {}
+      }, 1400);
+    }
+
+    function checkProgress() {
+      if (finished) return;
+
+      // If the three “message words” are correct, highlight them early (the “alignment” effect)
+      const specials = WORDS.filter(w => w.special);
+      const allSpecialCorrect = specials.every(w => {
+        const keys = wordCells.get(w.id) || [];
+        return keys.every((k, idx) => (inputs.get(k)?.value || "").toUpperCase() === w.answer[idx]);
+      });
+      setHighlights(allSpecialCorrect);
+
+      // If everything is correct, run full reveal sequence
+      if (allCorrect()) celebrate();
+    }
+  </script>
+</body>
+</html>
